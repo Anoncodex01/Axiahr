@@ -6,6 +6,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import FloatingImage from "@/components/FloatingImage";
 import LogoCarousel from "@/components/LogoCarousel";
+import { PARTNER_COMPANY_LOGOS } from "@/data/companyLogos";
 import ScrollAnimate from "@/components/ScrollAnimate";
 import { 
   ArrowRight, 
@@ -179,22 +180,7 @@ export default function Home() {
             <p className="text-[#6db99f] text-sm font-outfit-semibold uppercase tracking-wide mb-8">
               TRUSTED BY LEADING BUSINESSES WORLDWIDE
             </p>
-            <LogoCarousel 
-              logos={[
-                { name: 'Riana Group', logo: '/company-logos/riana_group_kenya_logo.jpeg' },
-                { name: 'Ashton Media', logo: '/company-logos/ashton-media-logo-new-01.png' },
-                { name: 'Pinnacle Engineering Solutions', logo: '/company-logos/pe_logo.svg' },
-                { name: 'Roadlab', logo: '/company-logos/rl-logo_raster_square.png' },
-                { name: 'SILAFRICA', logo: '/company-logos/sil-main-logo (1).avif' },
-                { name: 'Tanpack Tissues Limited', logo: '/company-logos/tanpacklogo1.png' },
-                { name: 'CRJE', logo: '/company-logos/crje-ea-limited-china-railway-jianchang-engineering-ltd-39908.jpg' },
-                { name: 'SIMBA', logo: '/company-logos/SIMBA-LOGO.png' },
-                { name: 'Kamal Steel', logo: '/company-logos/kamal-steel-logo-retina-new.png' },
-                { name: 'Kansai Plascon', logo: '/company-logos/kansai_plascon_logo.jpg' },
-                { name: 'Computech Limited', logo: '/company-logos/computech_limited_logo.jpeg' },
-                { name: 'Oxley Limited Tanzania', logo: '/company-logos/oxley_limited_tanzania_cover.jpeg' },
-              ]}
-            />
+            <LogoCarousel logos={PARTNER_COMPANY_LOGOS} />
           </div>
         </div>
       </section>
