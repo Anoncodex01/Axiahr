@@ -1,0 +1,15 @@
+# Axia HR Advisory - Robots.txt
+# Block admin and sensitive areas from search engines
+
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /candidate/profile
+Disallow: /employer/company-profile
+Disallow: /setup-database
+Disallow: /database-monitor
+
+# Sitemap
+Sitemap: https://axia.co.tz/sitemap.xml
+
