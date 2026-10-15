@@ -17,7 +17,13 @@ function getDbConfig() {
     charset: "utf8mb4",
     timezone: "+00:00",
 
-    enableKeepAlive: false,  // Prevent leftover zombie connections
+    // The remote host silently drops idle TCP connections, so reusing an old pooled
+    // connection fails with ECONNRESET. Keep connections alive and close idle ones
+    // well before that happens.
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10000,
+    maxIdle: 2,
+    idleTimeout: 20000,
   };
 }
 

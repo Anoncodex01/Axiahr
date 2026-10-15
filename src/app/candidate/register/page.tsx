@@ -30,6 +30,19 @@ function CandidateRegisterContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submitRequestIdRef = useRef<string | null>(null);
 
+  const readApiResponse = async (response: Response) => {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return response.json();
+    }
+
+    const text = await response.text();
+    return {
+      error: text.includes('<!DOCTYPE')
+        ? 'The server returned an error page instead of a registration response. Please try again after the server finishes compiling or contact support.'
+        : text || 'Registration failed. Please try again.'
+    };
+  };
 
   const origins = [
     'Tanzania', 'Kenya', 'Uganda', 'Rwanda', 'Burundi', 'South Sudan',
@@ -254,7 +267,7 @@ function CandidateRegisterContent() {
         return;
       }
 
-      const result = await response.json();
+      const result = await readApiResponse(response);
 
       if (!response.ok) {
         if (response.status === 409) {

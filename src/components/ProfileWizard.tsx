@@ -3,7 +3,9 @@
 import { useState, useEffect, useRef } from 'react';
 import LocationSelector from '@/components/LocationSelector';
 import { getCountryOptions, getStateOptions, getCityOptions, State } from '@/utils/locationData';
-import { ChevronLeft, ChevronRight, CheckCircle, User, MapPin, Briefcase, GraduationCap, FileText, Globe, DollarSign, Users, FolderOpen, Award, Badge as Certificate, Code, Target, Edit, Trash2, Plus } from 'lucide-react';
+import { readCachedProfileResponse } from '@/utils/profileCache';
+import { getProfileCompletionSections, calculateCompletionPercent, profileCompletionInputFromApi, PROFILE_COMPLETION_THRESHOLD, REFERENCES_ENABLED } from '@/utils/profileCompletion';
+import { ChevronLeft, ChevronRight, Check, CheckCircle, Camera, AlertCircle, User, MapPin, Briefcase, GraduationCap, FileText, Globe, DollarSign, Users, FolderOpen, Award, Badge as Certificate, Code, Target, Edit, Trash2, Plus } from 'lucide-react';
 import { searchNationalities } from '@/utils/jobData';
 import ExperienceModal from '@/components/ExperienceModal';
 import EducationModal from '@/components/EducationModal';
@@ -19,7 +21,7 @@ interface ProfileWizardProps {
   onComplete: () => void;
 }
 
-const steps = [
+const allSteps = [
   { id: 'personal', title: 'Personal Information', icon: User, description: 'Basic personal details' },
   { id: 'photo', title: 'Profile Photo', icon: User, description: 'Upload your profile picture' },
   { id: 'contact', title: 'Contact Information', icon: MapPin, description: 'Phone numbers and contact details' },
@@ -41,6 +43,9 @@ const steps = [
   { id: 'review', title: 'Review & Complete', icon: FileText, description: 'Review all information' }
 ];
 
+// The references step is hidden while REFERENCES_ENABLED is false (see utils/profileCompletion)
+const steps = allSteps.filter((step) => REFERENCES_ENABLED || step.id !== 'references');
+
 export default function ProfileWizard({ candidateId, onComplete }: ProfileWizardProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<string[]>([]);
@@ -51,7 +56,18 @@ export default function ProfileWizard({ candidateId, onComplete }: ProfileWizard
   const hasLoadedRef = useRef<string | null>(null);
   const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isLoadingRef = useRef(false);
-  const stepsScrollRef = useRef<HTMLDivElement>(null);
+  const stepsScrollRef = useRef<HTMLOListElement>(null);
+
+  // Keep the active step centred in the timeline (scroll horizontally only, never the page)
+  useEffect(() => {
+    const container = stepsScrollRef.current;
+    const item = container?.querySelector<HTMLElement>(`[data-step-index="${currentStep}"]`);
+    if (!container || !item) return;
+    container.scrollTo({
+      left: item.offsetLeft - container.clientWidth / 2 + item.clientWidth / 2,
+      behavior: 'smooth',
+    });
+  }, [currentStep, isLoadingData]);
 
   // Load existing profile data
   useEffect(() => {
@@ -126,9 +142,12 @@ export default function ProfileWizard({ candidateId, onComplete }: ProfileWizard
         }
       }
       
-      const response = await fetch(`/api/candidates/profile?candidateId=${encodeURIComponent(actualCandidateId)}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
+      const handoff = readCachedProfileResponse(true);
+      const response = handoff
+        ? new Response(JSON.stringify(handoff), { status: 200 })
+        : await fetch(`/api/candidates/profile?candidateId=${encodeURIComponent(actualCandidateId)}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
       
       let result;
       try {
@@ -727,120 +746,124 @@ export default function ProfileWizard({ candidateId, onComplete }: ProfileWizard
     isNewProfile: !profileData?.profile // New profiles have null profile, that's OK
   });
 
+  // Same calculation as the profile page, so both always show the same percentage
+  const completionPercent = calculateCompletionPercent(
+    getProfileCompletionSections(profileCompletionInputFromApi(profileData))
+  );
+  const CurrentStepIcon = steps[currentStep].icon;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-6">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-r from-[#114373] to-[#1e5a8a] rounded-full mb-3">
-            <User className="w-7 h-7 text-white" />
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Complete Your Profile</h1>
-          <p className="text-base sm:text-lg text-gray-600">
-            Your profile is <span className="font-semibold text-[#114373]">{Math.min(100, Math.round((completedSteps.length / steps.length) * 100))}%</span> complete. Let's finish it step by step!
-          </p>
-        </div>
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm mb-6 overflow-hidden">
+          <div className="h-1 bg-gradient-to-r from-[#114373] via-[#1e5a8a] to-[#2b7bbf]" />
+          <div className="p-5 sm:p-7">
+            <div className="flex items-center justify-between gap-6">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1e5a8a] mb-1.5">Profile Setup</p>
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Complete Your Profile</h1>
+                <p className="mt-1.5 text-sm sm:text-base text-gray-500">
+                  {completionPercent >= PROFILE_COMPLETION_THRESHOLD
+                    ? 'You can apply for jobs. Finish the remaining steps to strengthen your profile.'
+                    : `Reach ${PROFILE_COMPLETION_THRESHOLD}% to start applying for jobs. Let's finish it step by step.`}
+                </p>
+              </div>
 
-        {/* Modern Progress Grid */}
-        <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6 mb-6">
-          <div className="relative">
-            {/* Left Arrow */}
-            <button
-              onClick={() => {
-                if (stepsScrollRef.current) {
-                  stepsScrollRef.current.scrollBy({ left: -200, behavior: 'smooth' });
-                }
-              }}
-              className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white rounded-full p-2 shadow-lg hover:shadow-xl transition-all hover:scale-110 border border-gray-200"
-              aria-label="Scroll left"
-            >
-              <ChevronLeft className="w-5 h-5 text-[#114373]" />
-            </button>
-            
-            {/* Right Arrow */}
-            <button
-              onClick={() => {
-                if (stepsScrollRef.current) {
-                  stepsScrollRef.current.scrollBy({ left: 200, behavior: 'smooth' });
-                }
-              }}
-              className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white rounded-full p-2 shadow-lg hover:shadow-xl transition-all hover:scale-110 border border-gray-200"
-              aria-label="Scroll right"
-            >
-              <ChevronRight className="w-5 h-5 text-[#114373]" />
-            </button>
-            
-            <div ref={stepsScrollRef} className="flex overflow-x-auto gap-3 sm:gap-4 pb-2 mb-6 scrollbar-hide px-8 sm:px-12">
-          {steps.map((step, index) => {
-            const StepIcon = step.icon;
-            const isCompleted = completedSteps.includes(step.id);
-            const isCurrent = index === currentStep;
-            
-            return (
-                <div key={step.id} className="flex flex-col items-center group flex-shrink-0 min-w-[80px] sm:min-w-[100px]">
-                  <button
-                    onClick={() => {
-                      // Allow navigation to:
-                      // 1. Any completed step (can jump to any completed step)
-                      // 2. Current step
-                      // 3. Steps before current step
-                      // Cannot skip ahead to incomplete steps
-                      if (isCompleted || index <= currentStep) {
-                        setCurrentStep(index);
-                      }
-                    }}
-                    disabled={!isCompleted && index > currentStep}
-                    className={`
-                      w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center mb-2 transition-all duration-300 transform
-                      ${isCompleted
-                        ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl hover:scale-105 cursor-pointer' 
-                        : isCurrent 
-                        ? 'bg-gradient-to-r from-[#114373] to-[#1e5a8a] text-white shadow-lg scale-105' 
-                        : index < currentStep
-                        ? 'bg-gray-200 text-gray-600 cursor-pointer hover:bg-gray-300'
-                        : 'bg-gray-100 text-gray-400 cursor-not-allowed group-hover:bg-gray-200'
-                      }
-                    `}
-                  >
-                    {isCompleted ? <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6" /> : <StepIcon className="w-5 h-5 sm:w-6 sm:h-6" />}
-                  </button>
-                  <div className="text-center w-full">
-                    <p className={`text-xs font-semibold transition-colors leading-tight ${
-                      isCurrent ? 'text-[#114373]' : isCompleted ? 'text-green-600' : 'text-gray-500'
-                    }`}>
-                    {step.title}
-                  </p>
-                  {isCompleted && (
-                    <p className="text-xs text-green-500 mt-0.5">✓</p>
-                  )}
+              <div className="relative w-16 h-16 sm:w-20 sm:h-20 flex-shrink-0">
+                <svg viewBox="0 0 64 64" className="w-full h-full -rotate-90">
+                  <circle cx="32" cy="32" r="27" fill="none" stroke="#e5e7eb" strokeWidth="5" />
+                  <circle
+                    cx="32" cy="32" r="27" fill="none" stroke="#114373" strokeWidth="5" strokeLinecap="round"
+                    strokeDasharray={2 * Math.PI * 27}
+                    strokeDashoffset={2 * Math.PI * 27 * (1 - completionPercent / 100)}
+                    className="transition-[stroke-dashoffset] duration-700 ease-out"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-base sm:text-lg font-bold text-[#114373] leading-none">{completionPercent}%</span>
+                  <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-gray-400 mt-0.5">Done</span>
                 </div>
               </div>
-            );
-          })}
+            </div>
+
+            {/* Current step summary */}
+            <div className="mt-5 flex items-center gap-3 rounded-xl bg-[#114373]/[0.04] border border-[#114373]/10 px-4 py-3">
+              <div className="w-10 h-10 rounded-lg bg-[#114373] text-white flex items-center justify-center flex-shrink-0">
+                <CurrentStepIcon className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-gray-500">Step {currentStep + 1} of {steps.length}</p>
+                <p className="text-sm sm:text-base font-semibold text-gray-900 truncate">
+                  {steps[currentStep].title}
+                  <span className="hidden sm:inline font-normal text-gray-500"> · {steps[currentStep].description}</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Step timeline */}
+            <div className="relative mt-6">
+              <button
+                onClick={() => stepsScrollRef.current?.scrollBy({ left: -240, behavior: 'smooth' })}
+                className="absolute -left-1 top-[18px] -translate-y-1/2 z-20 w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm text-gray-500 hover:text-[#114373] hover:border-[#114373]/40 transition-colors"
+                aria-label="Scroll steps left"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => stepsScrollRef.current?.scrollBy({ left: 240, behavior: 'smooth' })}
+                className="absolute -right-1 top-[18px] -translate-y-1/2 z-20 w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm text-gray-500 hover:text-[#114373] hover:border-[#114373]/40 transition-colors"
+                aria-label="Scroll steps right"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+
+              <ol ref={stepsScrollRef} className="relative flex overflow-x-auto scrollbar-hide mx-8 pb-1">
+                {steps.map((step, index) => {
+                  const isCompleted = completedSteps.includes(step.id);
+                  const isCurrent = index === currentStep;
+                  // Cannot skip ahead to incomplete steps
+                  const canNavigate = isCompleted || index <= currentStep;
+                  const prevCompleted = index > 0 && completedSteps.includes(steps[index - 1].id);
+
+                  return (
+                    <li key={step.id} data-step-index={index} className="relative flex flex-col items-center flex-shrink-0 w-24 sm:w-28">
+                      {index > 0 && (
+                        <span
+                          aria-hidden
+                          className={`absolute top-[18px] right-1/2 w-full h-0.5 -translate-y-1/2 ${prevCompleted ? 'bg-[#114373]' : 'bg-gray-200'}`}
+                        />
+                      )}
+                      <button
+                        onClick={() => canNavigate && setCurrentStep(index)}
+                        disabled={!canNavigate}
+                        aria-current={isCurrent ? 'step' : undefined}
+                        className={`relative z-10 w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-200
+                          ${isCurrent
+                            ? 'bg-white border-2 border-[#114373] text-[#114373] ring-4 ring-[#114373]/15'
+                            : isCompleted
+                            ? 'bg-[#114373] text-white hover:bg-[#1e5a8a]'
+                            : canNavigate
+                            ? 'bg-white border border-gray-300 text-gray-600 hover:border-[#114373]/50'
+                            : 'bg-white border border-gray-200 text-gray-400 cursor-not-allowed'
+                          }`}
+                      >
+                        {isCompleted && !isCurrent ? <Check className="w-4 h-4" strokeWidth={3} /> : index + 1}
+                      </button>
+                      <span
+                        className={`mt-2 px-1 text-[11px] sm:text-xs text-center leading-tight ${
+                          isCurrent ? 'font-semibold text-[#114373]' : isCompleted ? 'font-medium text-gray-700' : 'text-gray-400'
+                        }`}
+                      >
+                        {step.title}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
             </div>
           </div>
-          
-          {/* Progress Bar */}
-          <div className="relative mb-4">
-            <div className="w-full h-2 bg-gray-200 rounded-full"></div>
-            <div 
-              className="absolute top-0 left-0 h-2 bg-gradient-to-r from-green-500 via-[#114373] to-[#1e5a8a] rounded-full transition-all duration-1000 ease-out"
-              style={{ width: `${Math.min(100, (completedSteps.length / steps.length) * 100)}%` }}
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-green-500 via-[#114373] to-[#1e5a8a] rounded-full animate-pulse opacity-75"></div>
-            </div>
-          </div>
-          
-          {/* Progress Text */}
-          <div className="flex justify-between items-center bg-gray-50 px-4 py-2 rounded-lg">
-            <span className="text-sm font-medium text-gray-600">
-              Step {currentStep + 1} of {steps.length}
-            </span>
-            <span className="text-sm font-semibold text-[#114373] bg-white px-3 py-1 rounded-md shadow-sm">
-              {Math.min(100, Math.round((completedSteps.length / steps.length) * 100))}% Complete
-            </span>
         </div>
-      </div>
 
       {/* Step Content */}
         <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8">
@@ -4974,9 +4997,24 @@ function PhotoStep({ data, candidateId, onComplete, isLoading }: any) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    // Reset so choosing the same file again still triggers onChange
+    e.target.value = '';
+    if (file) uploadFile(file);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (isUploading) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) uploadFile(file);
+  };
+
+  const uploadFile = async (file: File) => {
 
     // Validate file type
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
@@ -5041,100 +5079,115 @@ function PhotoStep({ data, candidateId, onComplete, isLoading }: any) {
     }
   };
 
+  const guidelines = [
+    'Use a professional, clear photo',
+    'Face should be clearly visible',
+    'Good lighting and a neutral background',
+    'Maximum file size of 5MB',
+    'JPEG, PNG, GIF or WebP format',
+  ];
+
   return (
     <div>
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">Profile Photo</h2>
-      
-      <div className="space-y-6">
-        {/* Current Photo Display */}
-        <div className="flex flex-col items-center space-y-4">
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Profile Photo</h2>
+        <p className="mt-1 text-sm text-gray-500">A friendly, professional photo helps employers put a face to your name.</p>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-5">
+        {/* Upload area */}
+        <label
+          htmlFor="photo-upload"
+          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          className={`lg:col-span-3 flex flex-col items-center justify-center text-center rounded-2xl border-2 border-dashed px-6 py-10 transition-colors
+            ${isUploading ? 'cursor-wait' : 'cursor-pointer'}
+            ${isDragging
+              ? 'border-[#114373] bg-[#114373]/[0.06]'
+              : 'border-gray-200 bg-gray-50/60 hover:border-[#114373]/40 hover:bg-[#114373]/[0.03]'
+            }`}
+        >
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            onChange={handleFileChange}
+            className="hidden"
+            id="photo-upload"
+            disabled={isUploading}
+          />
+
           <div className="relative">
-            <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-gray-200 bg-gray-100 flex items-center justify-center">
+            <div className="w-36 h-36 rounded-full overflow-hidden bg-white ring-4 ring-white shadow-lg flex items-center justify-center">
               {photo ? (
-                <img 
-                  src={photo} 
-                  alt="Profile" 
-                  className="w-full h-full object-cover"
-                />
+                <img src={photo} alt="Profile" className="w-full h-full object-cover" />
               ) : (
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-[#114373] rounded-full flex items-center justify-center mb-2 mx-auto">
-                    <User className="w-8 h-8 text-white" />
-                  </div>
-                  <p className="text-sm text-gray-500 font-medium">Upload Photo</p>
+                <div className="w-full h-full bg-gradient-to-br from-[#114373]/10 to-[#1e5a8a]/20 flex items-center justify-center">
+                  <User className="w-14 h-14 text-[#114373]/60" />
+                </div>
+              )}
+              {isUploading && (
+                <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
+                  <div className="w-8 h-8 border-[3px] border-white border-t-transparent rounded-full animate-spin" />
                 </div>
               )}
             </div>
+            <span className="absolute bottom-1 right-1 w-10 h-10 rounded-full bg-[#114373] text-white flex items-center justify-center shadow-md ring-4 ring-white">
+              <Camera className="w-4 h-4" />
+            </span>
           </div>
-          
-          <div className="text-center">
-            <p className="text-sm text-gray-600 mb-4">
-              {photo ? 'Your profile photo' : 'Upload a professional profile photo'}
-            </p>
-            
-            <div className="flex flex-col items-center gap-4">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                className="hidden"
-                id="photo-upload"
-                disabled={isUploading}
-              />
-              <label
-                htmlFor="photo-upload"
-                className="px-6 py-3 bg-[#114373] text-white rounded-lg hover:bg-[#0d3559] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {isUploading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Uploading...
-                  </>
-                ) : (
-                  <>
-                    <User className="w-4 h-4" />
-                    {photo ? 'Change Photo' : 'Upload Photo'}
-                  </>
-                )}
-              </label>
-              
-              {photo && (
-                <button
-                  onClick={handleRemovePhoto}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
-                >
-                  Remove Photo
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <p className="text-red-600 text-sm">{error}</p>
-          </div>
-        )}
+          <p className="mt-5 text-base font-semibold text-gray-900">
+            {isUploading ? 'Uploading your photo...' : photo ? 'Looking good!' : 'Add your profile photo'}
+          </p>
+          <p className="mt-1 text-sm text-gray-500">
+            {photo ? 'Click or drop a new image to replace it' : (
+              <>Drag and drop an image here, or <span className="font-semibold text-[#114373]">browse</span></>
+            )}
+          </p>
+          <p className="mt-3 text-xs text-gray-400">JPEG, PNG, GIF or WebP · up to 5MB</p>
+        </label>
 
         {/* Guidelines */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h3 className="font-semibold text-blue-900 mb-2">Photo Guidelines</h3>
-          <ul className="text-sm text-blue-800 space-y-1">
-            <li>• Use a professional, clear photo</li>
-            <li>• Face should be clearly visible</li>
-            <li>• Good lighting and neutral background</li>
-            <li>• File size: Maximum 5MB</li>
-            <li>• Supported formats: JPEG, PNG, GIF, WebP</li>
+        <div className="lg:col-span-2 rounded-2xl border border-gray-200 bg-white p-5">
+          <h3 className="text-sm font-semibold text-gray-900">Photo guidelines</h3>
+          <ul className="mt-4 space-y-3">
+            {guidelines.map((item) => (
+              <li key={item} className="flex items-start gap-3 text-sm text-gray-600">
+                <span className="mt-0.5 w-5 h-5 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0">
+                  <Check className="w-3 h-3" strokeWidth={3} />
+                </span>
+                {item}
+              </li>
+            ))}
           </ul>
+
+          {photo && (
+            <button
+              type="button"
+              onClick={handleRemovePhoto}
+              disabled={isUploading}
+              className="mt-6 w-full inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Remove photo
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="flex justify-end mt-6">
+      {error && (
+        <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          {error}
+        </div>
+      )}
+
+      <div className="flex justify-end mt-8 pt-6 border-t border-gray-100">
         <button
-          onClick={() => onComplete({ photoUrl: photo })}
+          onClick={() => onComplete({ profile: { photo_url: photo } })}
           disabled={isLoading || isUploading}
-          className="px-6 py-2 bg-[#114373] text-white rounded-lg hover:bg-[#0d3559] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#114373] text-white font-medium rounded-lg shadow-sm hover:bg-[#0d3559] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {isLoading ? 'Saving...' : 'Save & Continue'}
           <ChevronRight className="w-4 h-4" />

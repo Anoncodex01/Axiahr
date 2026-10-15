@@ -1,7 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import CandidateLayout from '@/components/CandidateLayout';
+import LoadingState from '@/components/LoadingState';
+import { cacheProfileResponse } from '@/utils/profileCache';
+import { getProfileCompletionSections, calculateCompletionPercent, PROFILE_COMPLETION_THRESHOLD, REFERENCES_ENABLED } from '@/utils/profileCompletion';
 import { locationData, getCountryOptions, State } from '@/utils/locationData';
 import { getQualificationLevels, searchUniversities, getCommonFieldsOfStudy } from '@/utils/universities';
 import { searchSpecializations, getAllSpecializations, getAllCategories, getQualificationsByCategory, getSpecializationsForQualification } from '@/utils/qualifications';
@@ -461,7 +465,15 @@ export default function ProfilePage() {
   });
   const [referenceError, setReferenceError] = useState('');
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [isRedirectingToWizard, setIsRedirectingToWizard] = useState(false);
+  const router = useRouter();
   const [showWizard, setShowWizard] = useState(false);
+
+  // Keep the loading screen up until navigation, so the incomplete profile never flashes.
+  const redirectToWizard = () => {
+    setIsRedirectingToWizard(true);
+    setTimeout(() => router.replace('/candidate/profile-wizard'), 600);
+  };
   const [candidateId, setCandidateId] = useState<string | null>(null);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
 
@@ -471,11 +483,8 @@ export default function ProfilePage() {
 
   // Check if profile is incomplete (less than 80%)
   // Use the unified completion percent for consistency
-  const isProfileIncomplete = () => {
-    const completionKeys = Object.values(profile.profileCompletion);
-    const percent = Math.round((completionKeys.filter(Boolean).length / completionKeys.length) * 100);
-    return percent < 80;
-  };
+  const isProfileIncomplete = () =>
+    calculateCompletionPercent(profile.profileCompletion) < PROFILE_COMPLETION_THRESHOLD;
 
   // Photo upload handlers
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -702,8 +711,7 @@ export default function ProfilePage() {
           
           // For other errors, redirect to wizard
           console.error('❌ Error loading profile:', result.error || 'Unknown error');
-          setIsLoadingProfile(false);
-          window.location.href = '/candidate/profile-wizard';
+          redirectToWizard();
           return;
         }
 
@@ -764,8 +772,8 @@ export default function ProfilePage() {
           const profileStatus = profileData?.status;
           if (profileStatus !== 'completed') {
             // Profile is incomplete, redirect to wizard
-            setIsLoadingProfile(false);
-            window.location.href = '/candidate/profile-wizard';
+            cacheProfileResponse(result);
+            redirectToWizard();
             return;
           }
 
@@ -773,8 +781,7 @@ export default function ProfilePage() {
           if (!profileData) {
             console.log('🔍 New candidate - no profile data, setting up basic profile');
             // New candidate with no profile - redirect to wizard
-            setIsLoadingProfile(false);
-            window.location.href = '/candidate/profile-wizard';
+            redirectToWizard();
             return;
           }
 
@@ -1101,8 +1108,7 @@ export default function ProfilePage() {
           // Handle error cases (404, 400, etc.) - candidate not found or other errors
           console.log('⚠️ Profile not found or error loading profile:', result.error || 'Unknown error');
           // If profile doesn't exist or has error, redirect to wizard
-          setIsLoadingProfile(false);
-          window.location.href = '/candidate/profile-wizard';
+          redirectToWizard();
           return;
           
           // Get candidate info from localStorage as fallback
@@ -1122,8 +1128,7 @@ export default function ProfilePage() {
           
           // If no candidate info found, redirect to wizard
           if (!candidateInfo) {
-            setIsLoadingProfile(false);
-            window.location.href = '/candidate/profile-wizard';
+            redirectToWizard();
             return;
           }
           
@@ -1467,32 +1472,34 @@ export default function ProfilePage() {
     return { countryCode: defaultCode, number: normalized };
   };
 
-  const computeProfileCompletion = (p: CandidateProfile): CandidateProfile['profileCompletion'] => {
-    const hasPersonalInfo = Boolean(
-      p.fullName && p.email && p.phone?.number && p.dateOfBirth && p.gender && p.maritalStatus &&
-      p.address?.city && p.address?.state && p.address?.country
-    );
-    const hasEmployment = p.experienceType === 'fresher'
-      ? Boolean(p.internships && p.internships.length > 0)
-      : Boolean(p.currentExperience || (p.previousExperiences && p.previousExperiences.length > 0));
-    const hasEducation = Boolean(p.education && p.education.length > 0);
-    const hasProfileContent = Boolean(p.resumeHeadline && (p.profileSummary || p.resumeUrl));
-    const hasSkills = Boolean(p.skills && p.skills.length > 0);
-    const hasSalary = Boolean(p.salaryInfo?.currency && (p.salaryInfo?.expected || p.salaryInfo?.current));
-    const hasPreferences = Boolean(p.jobPreferences?.jobType && p.jobPreferences?.workMode && p.jobPreferences?.shiftTiming);
-    const hasReferences = Boolean(p.references && p.references.length > 0 && isValidEmail(p.references[0]?.email));
-
-    return {
-      personalInfo: hasPersonalInfo,
-      employment: hasEmployment,
-      education: hasEducation,
-      salary: hasSalary,
-      profileContent: hasProfileContent,
-      skills: hasSkills,
-      preferences: hasPreferences,
-      references: hasReferences
-    };
-  };
+  const computeProfileCompletion = (p: CandidateProfile): CandidateProfile['profileCompletion'] =>
+    getProfileCompletionSections({
+      fullName: p.fullName?.trim(),
+      email: p.email,
+      phone: p.phone?.number,
+      dateOfBirth: p.dateOfBirth,
+      gender: p.gender,
+      maritalStatus: p.maritalStatus,
+      city: p.address?.city,
+      state: p.address?.state,
+      country: p.address?.country,
+      experienceType: p.experienceType,
+      workExperienceCount: (p.currentExperience ? 1 : 0) + (p.previousExperiences?.length || 0),
+      internshipCount: p.internships?.length || 0,
+      educationCount: p.education?.length || 0,
+      resumeHeadline: p.resumeHeadline,
+      profileSummary: p.profileSummary,
+      resumeUrl: p.resume?.resumeUrl,
+      skillsCount: p.skills?.length || 0,
+      salaryCurrency: p.salaryInfo?.currency,
+      salaryExpected: p.salaryInfo?.expected,
+      salaryCurrent: p.salaryInfo?.current,
+      jobType: p.jobPreferences?.jobType,
+      workMode: p.jobPreferences?.workMode,
+      shiftTiming: p.jobPreferences?.shiftTiming,
+      referencesCount: p.references?.length || 0,
+      firstReferenceEmail: p.references?.[0]?.email,
+    });
 
   const profileCompletionEqual = (
     a: CandidateProfile['profileCompletion'],
@@ -1533,8 +1540,7 @@ export default function ProfilePage() {
   // Completion percent
   // Use the same calculation method for consistency
   // Calculate completion based on profileCompletion flags (8 sections)
-  const completionKeys = Object.values(profile.profileCompletion);
-  const completionPercent = Math.round((completionKeys.filter(Boolean).length / completionKeys.length) * 100);
+  const completionPercent = calculateCompletionPercent(profile.profileCompletion);
   
   // Use the same percentage for both banner and completion section
   // This ensures consistency across the page
@@ -1572,7 +1578,8 @@ export default function ProfilePage() {
 
   const scrollToNextIncomplete = () => {
     const order: Array<keyof CandidateProfile['profileCompletion']> = [
-      'personalInfo','employment','education','profileContent','skills','salary','preferences','references'
+      'personalInfo','employment','education','profileContent','skills','salary','preferences',
+      ...(REFERENCES_ENABLED ? ['references' as const] : [])
     ];
     const next = order.find(k => !profile.profileCompletion[k]);
     const ref = next ? getRefForKey(next) : null;
@@ -1608,8 +1615,8 @@ export default function ProfilePage() {
     if (!(profile.salaryInfo?.currency && (profile.salaryInfo.expected || profile.salaryInfo.current))) items.push({ label: 'Fill Salary Currency and Expected/Current', ref: salaryRef });
     // Preferences
     if (!(profile.jobPreferences?.jobType && profile.jobPreferences.workMode && profile.jobPreferences.shiftTiming)) items.push({ label: 'Set Job Preferences (Type/Mode/Shift)', ref: preferencesRef });
-    // References
-    if (!(profile.references?.length && isValidEmail(profile.references[0]?.email))) items.push({ label: 'Add a Reference with valid Email', ref: referencesRef });
+    // References (disabled for now, see REFERENCES_ENABLED)
+    if (REFERENCES_ENABLED && !(profile.references?.length && isValidEmail(profile.references[0]?.email))) items.push({ label: 'Add a Reference with valid Email', ref: referencesRef });
     return items;
   };
 
@@ -3282,107 +3289,17 @@ const handleRemoveReference = (id: string) => {
   const profileCompletion = calculateProfileCompletion();
   const isProfileComplete = Object.values(profileCompletion).every(Boolean);
 
-  // Show shimmer loading while checking profile completion in background
-  if (isLoadingProfile) {
+  if (isLoadingProfile || isRedirectingToWizard) {
     return (
       <CandidateLayout>
-        <div className="w-full space-y-6">
-          {/* Header Shimmer */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="space-y-2">
-              <div className="h-8 w-48 bg-gray-200 rounded-lg animate-shimmer"></div>
-              <div className="h-5 w-80 bg-gray-200 rounded-lg animate-shimmer"></div>
-            </div>
-            <div className="h-10 w-32 bg-gray-200 rounded-lg animate-shimmer"></div>
-          </div>
-
-          {/* Profile Photo and Basic Info Shimmer */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-            <div className="flex items-start gap-6">
-              <div className="w-32 h-32 bg-gray-200 rounded-full animate-shimmer"></div>
-              <div className="flex-1 space-y-3">
-                <div className="h-7 w-64 bg-gray-200 rounded-lg animate-shimmer"></div>
-                <div className="h-5 w-48 bg-gray-200 rounded-lg animate-shimmer"></div>
-                <div className="grid grid-cols-2 gap-4 mt-4">
-                  <div className="space-y-2">
-                    <div className="h-4 w-24 bg-gray-200 rounded animate-shimmer"></div>
-                    <div className="h-5 w-40 bg-gray-200 rounded animate-shimmer"></div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="h-4 w-24 bg-gray-200 rounded animate-shimmer"></div>
-                    <div className="h-5 w-40 bg-gray-200 rounded animate-shimmer"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Personal Information Section Shimmer */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-            <div className="h-6 w-48 bg-gray-200 rounded-lg mb-4 animate-shimmer"></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <div key={index} className="space-y-2">
-                  <div className="h-4 w-32 bg-gray-200 rounded animate-shimmer"></div>
-                  <div className="h-10 w-full bg-gray-200 rounded-lg animate-shimmer"></div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Experience Section Shimmer */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="h-6 w-40 bg-gray-200 rounded-lg animate-shimmer"></div>
-              <div className="h-10 w-32 bg-gray-200 rounded-lg animate-shimmer"></div>
-            </div>
-            <div className="space-y-4">
-              {Array.from({ length: 2 }).map((_, index) => (
-                <div key={index} className="p-4 border border-gray-200 rounded-lg">
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-gray-200 rounded-lg animate-shimmer"></div>
-                    <div className="flex-1 space-y-2">
-                      <div className="h-5 w-56 bg-gray-200 rounded animate-shimmer"></div>
-                      <div className="h-4 w-40 bg-gray-200 rounded animate-shimmer"></div>
-                      <div className="h-4 w-full bg-gray-200 rounded animate-shimmer"></div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Education Section Shimmer */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="h-6 w-36 bg-gray-200 rounded-lg animate-shimmer"></div>
-              <div className="h-10 w-32 bg-gray-200 rounded-lg animate-shimmer"></div>
-            </div>
-            <div className="space-y-4">
-              {Array.from({ length: 2 }).map((_, index) => (
-                <div key={index} className="p-4 border border-gray-200 rounded-lg">
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-gray-200 rounded-lg animate-shimmer"></div>
-                    <div className="flex-1 space-y-2">
-                      <div className="h-5 w-64 bg-gray-200 rounded animate-shimmer"></div>
-                      <div className="h-4 w-48 bg-gray-200 rounded animate-shimmer"></div>
-                      <div className="h-4 w-32 bg-gray-200 rounded animate-shimmer"></div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Skills Section Shimmer */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-            <div className="h-6 w-32 bg-gray-200 rounded-lg mb-4 animate-shimmer"></div>
-            <div className="flex flex-wrap gap-2">
-              {Array.from({ length: 8 }).map((_, index) => (
-                <div key={index} className="h-8 w-24 bg-gray-200 rounded-full animate-shimmer"></div>
-              ))}
-            </div>
-          </div>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <LoadingState
+            message={
+              isRedirectingToWizard
+                ? "Your profile isn't complete yet. Taking you to profile setup..."
+                : 'Checking your profile...'
+            }
+          />
         </div>
       </CandidateLayout>
     );
@@ -5231,7 +5148,8 @@ const handleRemoveReference = (id: string) => {
             )}
           </div>
 
-          {/* References */}
+          {/* References - hidden while REFERENCES_ENABLED is false (see utils/profileCompletion) */}
+          {REFERENCES_ENABLED && (
           <div className="bg-white rounded-lg border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Professional References (At least 3)</h2>
@@ -5334,7 +5252,7 @@ const handleRemoveReference = (id: string) => {
               ))}
             </div>
           </div>
-
+          )}
 
           {/* Projects */}
           <div className="bg-white rounded-lg border border-gray-200 p-6">

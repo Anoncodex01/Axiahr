@@ -439,6 +439,11 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // Only accept photos uploaded through /api/candidates/photo
+    const rawPhotoUrl = profileData?.photoUrl ?? profileData?.photo_url;
+    const photoUrl =
+      typeof rawPhotoUrl === 'string' && /^\/uploads\/photos\/[\w.-]+$/.test(rawPhotoUrl) ? rawPhotoUrl : null;
+
     // Check if profile exists
     const existingProfile = await executeQuery(
       'SELECT id FROM candidate_profiles WHERE candidate_id = ?',
@@ -609,6 +614,11 @@ export async function PUT(request: NextRequest) {
         updateFields.push('total_experience_months = ?');
         updateValues.push(profileData.total_experience_months);
       }
+
+      if (photoUrl) {
+        updateFields.push('photo_url = ?');
+        updateValues.push(photoUrl);
+      }
       
       if (updateFields.length > 0) {
         updateFields.push('updated_at = CURRENT_TIMESTAMP');
@@ -633,8 +643,8 @@ export async function PUT(request: NextRequest) {
           permanent_location_city, permanent_location_state, permanent_location_country,
           current_address_house_no, current_address_street_name, current_address_landmark, current_address_postal_code,
           permanent_address_house_no, permanent_address_street_name, permanent_address_landmark, permanent_address_postal_code,
-          resume_headline, profile_summary, experience_type, total_experience_years, total_experience_months) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          resume_headline, profile_summary, experience_type, total_experience_years, total_experience_months, photo_url) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           candidateId,
           (profileData?.date_of_birth ?? profileData?.dateOfBirth) || null,
@@ -660,7 +670,8 @@ export async function PUT(request: NextRequest) {
           profileData?.profile_summary || null,
           profileData?.experience_type || 'fresher',
           profileData?.total_experience_years || null,
-          profileData?.total_experience_months || null
+          profileData?.total_experience_months || null,
+          photoUrl
         ]
       );
       

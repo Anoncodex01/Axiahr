@@ -182,7 +182,14 @@ export async function POST(request: NextRequest) {
         });
       } catch (emailError) {
         console.error('Failed to send OTP email:', emailError);
-        // Don't fail the login if email fails
+        return NextResponse.json(
+          {
+            error: 'We could not send the verification code right now. Please check the email service settings and try again.',
+            details: process.env.NODE_ENV === 'development' && emailError instanceof Error ? emailError.message : undefined,
+            requiresVerification: false
+          },
+          { status: 503 }
+        );
       }
 
       return NextResponse.json(

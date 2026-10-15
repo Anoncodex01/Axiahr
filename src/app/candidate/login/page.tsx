@@ -18,6 +18,20 @@ function CandidateLoginContent() {
     password: ''
   });
 
+  const readApiResponse = async (response: Response) => {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return response.json();
+    }
+
+    const text = await response.text();
+    return {
+      error: text.includes('<!DOCTYPE')
+        ? 'The server returned an error page instead of a login response. Please try again after the server finishes compiling or contact support.'
+        : text || 'Login failed. Please try again.'
+    };
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -32,7 +46,7 @@ function CandidateLoginContent() {
         body: JSON.stringify(loginData),
       });
 
-      const result = await response.json();
+      const result = await readApiResponse(response);
 
       // Check for verification requirement first (even if success is false)
       if (result.requiresVerification) {

@@ -85,6 +85,20 @@ export default function CandidateVerification() {
     return null;
   };
 
+  const readApiResponse = async (response: Response) => {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return response.json();
+    }
+
+    const text = await response.text();
+    return {
+      error: text.includes('<!DOCTYPE')
+        ? 'The server returned an error page instead of a verification response. Please try again after the server finishes compiling or contact support.'
+        : text || 'Verification failed. Please try again.'
+    };
+  };
+
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -118,7 +132,7 @@ export default function CandidateVerification() {
         }),
       });
 
-      const result = await response.json();
+      const result = await readApiResponse(response);
 
       if (!response.ok) {
         throw new Error(result.error || 'Verification failed');
@@ -281,7 +295,7 @@ export default function CandidateVerification() {
         }),
       });
 
-      const result = await response.json();
+      const result = await readApiResponse(response);
 
       if (!response.ok) {
         throw new Error(result.error || 'Failed to resend code');

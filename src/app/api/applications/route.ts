@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeQuery, executeSingleQuery } from '@/lib/database';
+import { REFERENCES_ENABLED } from '@/utils/profileCompletion';
 
 // GET /api/applications - Get all applications with filters
 export async function GET(request: NextRequest) {
@@ -224,11 +225,12 @@ export async function POST(request: NextRequest) {
     if (!profile.resume_headline && !profile.profile_summary) missingRequirements.push('Add a resume headline or profile summary.');
     if (!(profile.experience_count > 0 || profile.internship_count > 0)) missingRequirements.push('Add at least one employment, internship, or volunteer experience.');
     if (profile.education_count <= 0) missingRequirements.push('Add at least one education entry.');
-    if (profile.references_count < 3) missingRequirements.push('Add three professional references.');
+    // References are disabled for now, see REFERENCES_ENABLED
+    if (REFERENCES_ENABLED && profile.references_count < 3) missingRequirements.push('Add three professional references.');
     if (!profile.current_location_city && !profile.current_location_state && !profile.current_location_country) missingRequirements.push('Add your current country, region/state, and district/city.');
 
     // Phase 1 completion: photo, house number, landmark, postal code, and administrative numbers are optional.
-    const totalFields = 10;
+    const totalFields = REFERENCES_ENABLED ? 10 : 9;
     let completedFields = 0;
 
     // Essential personal and contact information (5 fields)
@@ -244,7 +246,7 @@ export async function POST(request: NextRequest) {
 
     // Education, references, and simplified location
     if (profile.education_count > 0) completedFields++;
-    if (profile.references_count >= 3) completedFields++;
+    if (REFERENCES_ENABLED && profile.references_count >= 3) completedFields++;
     if (profile.current_location_city || profile.current_location_state || profile.current_location_country) completedFields++;
 
     const completionPercentage = Math.round((completedFields / totalFields) * 100);

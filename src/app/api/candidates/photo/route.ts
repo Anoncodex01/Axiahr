@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeQuery, executeSingleQuery } from '@/lib/database';
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir, unlink } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
@@ -65,37 +65,30 @@ export async function POST(request: NextRequest) {
     savedType = file.type;
     
     try {
-      // Check if candidate already has a photo
+      // executeQuery retries on dropped connections; both statements are safe to repeat
       const existingPhoto = await executeQuery(
         'SELECT photo_url FROM candidate_profiles WHERE candidate_id = ?',
         [candidateId]
       );
 
       if (existingPhoto.length > 0) {
-        // Update existing photo
-        await executeSingleQuery(
+        await executeQuery(
           'UPDATE candidate_profiles SET photo_url = ?, updated_at = CURRENT_TIMESTAMP WHERE candidate_id = ?',
           [photoUrl, candidateId]
         );
       } else {
-        // Insert new photo record
-        await executeSingleQuery(
+        await executeQuery(
           'INSERT INTO candidate_profiles (candidate_id, photo_url, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) ON DUPLICATE KEY UPDATE photo_url = ?, updated_at = CURRENT_TIMESTAMP',
           [candidateId, photoUrl, photoUrl]
         );
       }
     } catch (dbError) {
-      console.error('Profile photo saved, but database update failed:', dbError);
+      console.error('Profile photo file saved, but database update failed:', dbError);
+      await unlink(filepath).catch(() => {});
       return NextResponse.json({
-        success: true,
-        warning: 'Photo uploaded successfully. It may not persist after refresh until the database connection is available.',
-        data: {
-          photoUrl,
-          filename,
-          size: file.size,
-          type: file.type
-        }
-      });
+        success: false,
+        error: 'Could not save your photo right now. Please try again.'
+      }, { status: 503 });
     }
 
     return NextResponse.json({

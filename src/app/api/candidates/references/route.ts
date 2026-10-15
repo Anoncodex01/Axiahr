@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeQuery, executeSingleQuery } from '@/lib/database';
+import { REFERENCES_ENABLED } from '@/utils/profileCompletion';
 
 export async function GET(request: NextRequest) {
   try {
@@ -62,8 +63,8 @@ export async function POST(request: NextRequest) {
       ]
     );
 
-    // Send verification email if consent is given
-    if (referenceData.consentToContact) {
+    // Referee verification email is disabled for now, see REFERENCES_ENABLED
+    if (REFERENCES_ENABLED && referenceData.consentToContact) {
       try {
         const verificationLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/referee-verification?ref=${result.insertId}&candidate=Candidate`;
         

@@ -96,11 +96,11 @@ export async function POST(request: NextRequest) {
           // Continue anyway - might be duplicate OTP
         }
 
-        // Send OTP email asynchronously (fire-and-forget) - don't wait for it
-        sendEmail({
-          to: normalizedEmail,
-          subject: 'Email Verification Code - Axia HR Advisory',
-          html: `
+        try {
+          await sendEmail({
+            to: normalizedEmail,
+            subject: 'Email Verification Code - Axia HR Advisory',
+            html: `
             <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">
               <div style="background: linear-gradient(135deg, #114373 0%, #0d3559 100%); padding: 30px; text-align: center;">
                 <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600;">Axia HR Advisory</h1>
@@ -125,25 +125,17 @@ export async function POST(request: NextRequest) {
               </div>
             </div>
           `
-        }).catch((emailError) => {
-          // Log error but don't block response - use console.error to ensure it appears in PM2 logs
-          const errorDetails = {
-            message: emailError?.message,
-            code: emailError?.code,
-            response: emailError?.response,
-            command: emailError?.command,
-            candidateId: candidate.id,
-            email: normalizedEmail,
-            otpCode
-          };
-
-          // Log to console.error (appears in PM2 logs)
-          console.error('❌ Failed to send OTP email for unverified account (non-blocking):', emailError);
-          console.error('   Error details:', JSON.stringify(errorDetails, null, 2));
-
-          // Also log to stderr explicitly
-          process.stderr.write(`[EMAIL ERROR] Failed to send OTP to ${normalizedEmail}: ${emailError?.message || 'Unknown error'}\n`);
-        });
+          });
+        } catch (emailError: any) {
+          console.error('❌ Failed to send OTP email for unverified account:', emailError);
+          return NextResponse.json(
+            {
+              error: 'We found your account, but could not send a new verification code right now. Please check the email service settings and try again.',
+              details: process.env.NODE_ENV === 'development' ? emailError?.message : undefined
+            },
+            { status: 503 }
+          );
+        }
 
         // Return success with redirect to verification immediately
         return NextResponse.json({
@@ -232,9 +224,8 @@ export async function POST(request: NextRequest) {
 
     console.log('📧 Sending OTP email to:', email);
 
-    // Send OTP email asynchronously (fire-and-forget) - don't wait for it
-    // This ensures the response is sent immediately without waiting for email
-    sendEmail({
+    try {
+      await sendEmail({
       to: email,
       subject: 'Email Verification Code - Axia HR Advisory',
       html: `
@@ -262,25 +253,21 @@ export async function POST(request: NextRequest) {
           </div>
         </div>
       `
-    }).catch((emailError) => {
-      // Log error but don't block response - use console.error to ensure it appears in PM2 logs
-      const errorDetails = {
-        message: emailError?.message,
-        code: emailError?.code,
-        response: emailError?.response,
-        command: emailError?.command,
-        candidateId,
-        email,
-        otpCode
-      };
-
-      // Log to console.error (appears in PM2 logs)
-      console.error('❌ Failed to send OTP email during registration (non-blocking):', emailError);
-      console.error('   Error details:', JSON.stringify(errorDetails, null, 2));
-
-      // Also log to stderr explicitly
-      process.stderr.write(`[EMAIL ERROR] Failed to send OTP to ${email}: ${emailError?.message || 'Unknown error'}\n`);
-    });
+      });
+    } catch (emailError: any) {
+      console.error('❌ Failed to send OTP email during registration:', emailError);
+      return NextResponse.json(
+        {
+          error: 'Registration was saved, but we could not send the verification code right now. Please check the email service settings and use Resend verification code.',
+          details: process.env.NODE_ENV === 'development' ? emailError?.message : undefined,
+          data: {
+            candidateId,
+            email
+          }
+        },
+        { status: 503 }
+      );
+    }
 
     console.log('📧 OTP email sent successfully to:', email);
 

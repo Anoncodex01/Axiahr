@@ -71,6 +71,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // MySQL runs in non-strict mode, so a value outside the column's allowed list is
+    // silently stored as '' instead of failing. Reject unknown values up front.
+    const ALLOWED_JOB_TYPES = ['full-time', 'part-time', 'on-site', 'remote', 'hybrid', 'contract', 'freelance', 'fixed-term', 'permanent', 'internship'];
+    const ALLOWED_WORK_MODES = ['on-site', 'remote', 'hybrid', 'office'];
+    const ALLOWED_SHIFTS = ['day', 'night', 'flexible'];
+    if (
+      !ALLOWED_JOB_TYPES.includes(preferencesData.jobType) ||
+      !ALLOWED_WORK_MODES.includes(preferencesData.workMode) ||
+      !ALLOWED_SHIFTS.includes(preferencesData.shiftTiming)
+    ) {
+      return NextResponse.json(
+        { error: 'Invalid Job Type, Work Mode, or Shift Timing' },
+        { status: 400 }
+      );
+    }
+
     // Check if preferences already exist
     const existing = await executeQuery(
       'SELECT id FROM candidate_job_preferences WHERE candidate_id = ?',

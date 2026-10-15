@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import CandidateLayout from '@/components/CandidateLayout';
 import ProfileWizard from '@/components/ProfileWizard';
+import LoadingState from '@/components/LoadingState';
+import { readCachedProfileResponse } from '@/utils/profileCache';
 import { CheckCircle, ArrowLeft, X } from 'lucide-react';
 
 export default function ProfileWizardPage() {
@@ -16,9 +18,12 @@ export default function ProfileWizardPage() {
     // Load candidate context from API using cookie/JWT
     const init = async () => {
       try {
-        const res = await fetch('/api/candidates/profile', { cache: 'no-store' });
-        if (!res.ok) throw new Error('Failed to load');
-        const data = await res.json();
+        let data = readCachedProfileResponse();
+        if (!data) {
+          const res = await fetch('/api/candidates/profile', { cache: 'no-store' });
+          if (!res.ok) throw new Error('Failed to load');
+          data = await res.json();
+        }
         const id = data?.data?.candidate?.id;
         const status = data?.data?.profile?.status;
         if (status === 'completed') {
@@ -48,11 +53,8 @@ export default function ProfileWizardPage() {
   if (isLoading) {
     return (
       <CandidateLayout>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#114373] mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading profile wizard...</p>
-          </div>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <LoadingState message="Preparing your profile setup..." />
         </div>
       </CandidateLayout>
     );
