@@ -12,10 +12,10 @@ async function testEmail() {
   console.log('🧪 Testing Email Configuration...\n');
 
   // Get SMTP configuration
-  const smtpHost = process.env.SMTP_HOST || 'support.axia.co.tz';
+  const smtpHost = process.env.SMTP_HOST;
   const smtpPort = parseInt(process.env.SMTP_PORT || '465');
   const smtpSecure = process.env.SMTP_SECURE === 'true' || process.env.SMTP_SECURE === '1' || smtpPort === 465;
-  const smtpUser = process.env.SMTP_USER || 'no-reply@support.axia.co.tz';
+  const smtpUser = process.env.SMTP_USER;
   const smtpPass = process.env.SMTP_PASS || '';
   const fromEmail = process.env.FROM_EMAIL || smtpUser;
   const fromName = process.env.FROM_NAME || 'Axia HR Advisory';

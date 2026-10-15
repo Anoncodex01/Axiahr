@@ -7,11 +7,16 @@ require('dotenv').config({ path: '.env.local' });
 const nodemailer = require('nodemailer');
 
 async function testEmail() {
-  const smtpHost = process.env.SMTP_HOST || 'rs018.webhostbox.net';
+  const smtpHost = process.env.SMTP_HOST;
   const smtpPort = parseInt(process.env.SMTP_PORT || '465');
   const smtpSecure = true;
-  const smtpUser = process.env.SMTP_USER || 'no-reply@support.axia.co.tz';
-  const smtpPass = process.env.SMTP_PASS || 'Axia@2025@';
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    console.error('❌ Set SMTP_HOST, SMTP_USER and SMTP_PASS in .env.local');
+    process.exit(1);
+  }
   const fromEmail = process.env.FROM_EMAIL || smtpUser;
   const fromName = process.env.FROM_NAME || 'Axia HR Advisory';
 

@@ -18,6 +18,14 @@ export async function POST(request: NextRequest) {
     }
 
     const envFile = '/var/www/axia-nextjs/.env.production';
+
+    const cpanelPassword = process.env.CPANEL_DB_PASSWORD;
+    if (target === 'cpanel' && !cpanelPassword) {
+      return NextResponse.json(
+        { error: 'CPANEL_DB_PASSWORD is not configured on the server' },
+        { status: 500 }
+      );
+    }
     
     // Read current env file
     let envContent = '';
@@ -52,7 +60,7 @@ export async function POST(request: NextRequest) {
       if (target === 'cpanel') {
         if (line.startsWith('DB_HOST=')) return 'DB_HOST=192.250.229.162';
         if (line.startsWith('DB_USER=')) return 'DB_USER=nisapoti_Axia';
-        if (line.startsWith('DB_PASSWORD=')) return 'DB_PASSWORD=Alvin@2025';
+        if (line.startsWith('DB_PASSWORD=')) return `DB_PASSWORD=${cpanelPassword}`;
         if (line.startsWith('DB_NAME=')) return 'DB_NAME=nisapoti_Axia';
         if (line.startsWith('DB_PORT=')) return 'DB_PORT=3306';
         if (line.startsWith('DB_SOURCE=')) return 'DB_SOURCE=cpanel';
@@ -77,7 +85,7 @@ export async function POST(request: NextRequest) {
       if (!hasDbHost) {
         updatedLines.push('DB_HOST=192.250.229.162');
         updatedLines.push('DB_USER=nisapoti_Axia');
-        updatedLines.push('DB_PASSWORD=Alvin@2025');
+        updatedLines.push(`DB_PASSWORD=${cpanelPassword}`);
         updatedLines.push('DB_NAME=nisapoti_Axia');
         updatedLines.push('DB_PORT=3306');
       }

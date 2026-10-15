@@ -13,7 +13,7 @@ const Stripe = require('stripe');
 const dbConfig = {
   host: process.env.DB_HOST || '192.250.229.162',
   user: process.env.DB_USER || 'nisapoti_Axia',
-  password: process.env.DB_PASSWORD || 'Alvin@2025',
+  password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'nisapoti_Axia',
   port: process.env.DB_PORT || 3306
 };

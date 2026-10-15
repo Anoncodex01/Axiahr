@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     const cpanelStatus = await testConnection(
       '192.250.229.162',
       'nisapoti_Axia',
-      'Alvin@2025',
+      process.env.CPANEL_DB_PASSWORD || '',
       'nisapoti_Axia',
       '3306'
     );

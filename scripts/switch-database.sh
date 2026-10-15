@@ -18,7 +18,7 @@ BACKUP_ENV_FILE="/var/www/axia-nextjs/.env.production.backup"
 # Database configurations
 CPANEL_DB_HOST="192.250.229.162"
 CPANEL_DB_USER="nisapoti_Axia"
-CPANEL_DB_PASSWORD="Alvin@2025"
+CPANEL_DB_PASSWORD="${CPANEL_DB_PASSWORD:?Set CPANEL_DB_PASSWORD in the environment}"
 CPANEL_DB_NAME="nisapoti_Axia"
 CPANEL_DB_PORT="3306"
 
