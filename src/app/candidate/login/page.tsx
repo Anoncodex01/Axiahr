@@ -360,6 +360,12 @@ function CandidateLoginContent() {
               </button>
             </form>
 
+            <div className="mt-6 text-center">
+              <Link href="/candidate/forgot-password" className="text-[#114373] hover:text-[#0d3559] text-sm font-outfit-medium transition-colors">
+                Forgot your password?
+              </Link>
+            </div>
+
             {/* Register Link */}
             <div className="mt-8 text-center pt-6 border-t border-gray-200">
               <p className="text-gray-600 font-outfit-regular">
